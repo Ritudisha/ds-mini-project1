@@ -1,4 +1,5 @@
 import random
+from sqlite3 import Timestamp
 import sys
 import datetime
 import _thread
@@ -9,51 +10,96 @@ processes = []
 running = False
 system_start = datetime.datetime.now()
 t = 10
-CSQueue = []
-time_cs = random.randint(10, 20)
-
+time_cs = random.randint(5, 5)
 
 class Process:
-    def __init__(self, id, name, data,label):
+    def __init__(self, id, name, state,label):
         self.id = id
         self.name = name
-        self.data = data
+        self.state = state
         self.label= label
         self.elections = 0
         self.held_time = time 
         self.time_start = time
         self.set_time = time
+        self.requestQueue = {}
+        self.permissions = {}
+        self.request_timestamp = time
+        self.timeout = random.randint(5, t)
 
     # starts a thread that runs the process
     def start(self):
         _thread.start_new_thread(self.run, ())
 
     def run(self):
-        # with 5 second interval, update clock
+        # with t second interval, update clock
         while True:
-            time.sleep(random.randint(5, t))
-            self.update_data()
+            time.sleep(self.timeout)
+            self.update_state()
 
-    def update_data(self):
-        #self.data = 'DO-NOT-WANT' if self.data == 'WANTED' else 'WANTED'
-        if(self.data == 'DO-NOT-WANT'):
-            self.data = 'WANTED'
-            CSQueue.append(self)
-        if(self.data == 'WANTED'):
-            if(len([p for p in processes if p.data == 'HELD']) == 0):
-                p = CSQueue.pop(0)
-                p.data = 'HELD'
-                p.held_time = time.time()
-        if(self.data == 'HELD'):
+    def update_state(self):
+        global p_holding_CS
+        if(self.state == 'DO-NOT-WANT'):
+            self.state = 'WANTED'
+            self.request_timestamp = time.time()
+            if(self.send_request()):
+                self.state = 'HELD'
+                p_holding_CS = self
+                _thread.start_new_thread(critical_section_tick, ())
+                self.held_time = time.time()
+        elif(self.state == 'WANTED'):
+            if(self.is_available()):
+                self.state = 'HELD'
+                p_holding_CS = self
+                _thread.start_new_thread(critical_section_tick, ())
+                self.held_time = time.time()
+        elif(self.state == 'HELD'):
             now = time.time()
-            if((now - self.held_time) >= time_cs):
-                self.data = 'DO-NOT-WANT'
-                if(len(CSQueue) > 0):
-                    next_process = CSQueue.pop(0)
-                    next_process.data = 'HELD'
-                    next_process.held_time = time.time()
+            self.state = 'DO-NOT-WANT'
+            p_holding_CS = None
+            for p in processes:
+                self.grant_permission(p)
+            self.request_timestamp = time
+
     def kill(self):
         _thread.kill()
+
+    def permission(self, sent_by, time):
+        if(self.state == 'DO-NOT-WANT'):
+            return True
+        if(self.state == 'HELD'):
+            self.requestQueue[sent_by] = time
+            return False
+        if(self.state == 'WANTED'):
+            if(self.request_timestamp > time):
+                return True
+            return False
+
+    def send_request(self):
+        t = time.time()
+        for p in processes:
+            self.permissions[p.id] = p.permission(self.id, t)
+                
+        return self.is_available()
+
+    def is_available(self):
+        return len([p for p in self.permissions.values() if p == True]) == (len(processes) - 1)
+
+    def grant_permission(self, to):
+        to.permissions[self.id] = True
+
+p_holding_CS = Process
+def critical_section_tick():
+    time.sleep(time_cs)
+    try:
+        if(p_holding_CS != None):
+            print(p_holding_CS.id, p_holding_CS.state)
+            p_holding_CS.update_state()
+        return None   
+    except AttributeError:
+        return None
+
+
 
 def tick(running, processes):
     # program ticks evey second 
@@ -63,22 +109,22 @@ def tick(running, processes):
 def update_master(value):     
         for p in processes:
             if p.label == 'C':
-                p.data = value
+                p.state = value
 
 def update_p_t(tm):
-    global t
     #print(f'Caching time for update {t}')
-    t = tm
+    for p in processes:
+        p.timeout = random.randint(5, tm)
 
 def update_cs_t(tm):
     global time_cs
     #print(f'Caching time for update {t}')
-    time_cs = random.randint(10, time_cs)
+    time_cs = random.randint(10, tm)
 
 def list(processes):
     # utility method to list proceeses
     for p in processes:
-        str = f"{p.name}, {p.data}" 
+        str = f"{p.name}, {p.state}" 
         print(str, end="\n")
 
 
@@ -89,9 +135,9 @@ def parse_lines(lines):
         p = l.split(",")
         id = int(p[0].strip())
         name = p[1].strip().split("_")[0]
-        data = p[2]
+        state = p[2]
         label=p[3].strip()
-        result.append([id, name, data,label])
+        result.append([id, name, state,label])
     return result
 
 
@@ -150,11 +196,6 @@ def run_commands(inp, procs, stat):
         try:
             list(processes)
         except: 
-            print("Error")
-    elif command == "update":
-        try:
-            update_master(inp.split(" ")[1])
-        except:
             print("Error")
     elif command == "time-p":
         try:
