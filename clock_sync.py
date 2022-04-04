@@ -9,8 +9,8 @@ import time
 processes = []
 running = False
 system_start = datetime.datetime.now()
-t = 10
-time_cs = random.randint(5, 5)
+t = 5
+time_cs = random.randint(10, 20)
 
 class Process:
     def __init__(self, id, name, state,label):
@@ -93,7 +93,6 @@ def critical_section_tick():
     time.sleep(time_cs)
     try:
         if(p_holding_CS != None):
-            print(p_holding_CS.id, p_holding_CS.state)
             p_holding_CS.update_state()
         return None   
     except AttributeError:
@@ -140,14 +139,14 @@ def parse_lines(lines):
         result.append([id, name, state,label])
     return result
 
-
+ids = []
 def main(args):
     # main program function
     print(args)
     if len(args) == 1:
         try:
             n = int(args)
-            ids = []
+            
             for p in range(n):     
                 if p not in ids:
                     #print(p[3])
