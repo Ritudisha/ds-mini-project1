@@ -9,7 +9,7 @@ server = sys.argv[1]
 try:
    conn = rpyc.connect(server,18813)
    if(not conn.root.isrunning()):
-      n = input('The number of threads(other replicas): ')
+      n = input('The number of threads: ')
       conn.root.start_processes(n)
       
    cmd = ''
